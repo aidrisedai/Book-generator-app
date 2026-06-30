@@ -115,10 +115,57 @@ function renderPage() {
 
 function go(delta) {
   if (!book) return;
+  stopReading(); // manual navigation cancels read-aloud
   const next = current + delta;
   if (next < 0 || next >= book.pages.length) return;
   current = next;
   renderPage();
+}
+
+// ---- Read aloud (browser Web Speech API) ----
+let reading = false;
+const speechSupported = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+
+function speakPage(index) {
+  const utter = new SpeechSynthesisUtterance(book.pages[index].text);
+  utter.rate = 0.95;
+  utter.pitch = 1;
+  utter.onend = () => {
+    if (!reading) return; // was stopped
+    if (index < book.pages.length - 1) {
+      current = index + 1;
+      renderPage();
+      speakPage(current); // auto-turn to the next page and keep reading
+    } else {
+      stopReading();
+    }
+  };
+  window.speechSynthesis.speak(utter);
+}
+
+function startReading() {
+  if (!book || !speechSupported) return;
+  window.speechSynthesis.cancel();
+  reading = true;
+  updateReadButton();
+  speakPage(current);
+}
+
+function stopReading() {
+  if (!reading) return;
+  reading = false;
+  if (speechSupported) window.speechSynthesis.cancel();
+  updateReadButton();
+}
+
+function toggleReading() {
+  reading ? stopReading() : startReading();
+}
+
+function updateReadButton() {
+  const btn = $("readBtn");
+  btn.textContent = reading ? "⏹ Stop reading" : "🔊 Read aloud";
+  btn.classList.toggle("active", reading);
 }
 
 // ---- Print / PDF ----
@@ -152,6 +199,7 @@ function buildPrintAndOpen() {
 }
 
 function reset() {
+  stopReading();
   book = null;
   current = 0;
   reader.classList.add("hidden");
@@ -166,6 +214,13 @@ $("prevBtn").addEventListener("click", () => go(-1));
 $("nextBtn").addEventListener("click", () => go(1));
 $("printBtn").addEventListener("click", buildPrintAndOpen);
 $("newBtn").addEventListener("click", reset);
+$("readBtn").addEventListener("click", toggleReading);
+
+// Hide the read-aloud button on browsers that don't support speech synthesis.
+if (!speechSupported) $("readBtn").classList.add("hidden");
+
+// Stop any narration if the user leaves or refreshes the page.
+window.addEventListener("beforeunload", stopReading);
 
 document.addEventListener("keydown", (e) => {
   if (reader.classList.contains("hidden")) return;
