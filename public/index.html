@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Storybook Generator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&family=Nunito:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <h1>The Storybook Machine</h1>
+      <p>Give it a paragraph. Get back a whole illustrated book.</p>
+    </header>
+
+    <main>
+      <!-- Composer -->
+      <section id="composer" class="composer">
+        <label for="paragraph" class="field-label">Your starting paragraph</label>
+        <textarea
+          id="paragraph"
+          rows="5"
+          placeholder="e.g. On a foggy morning, a small fox named Pip discovered a door at the bottom of the garden that hadn't been there the night before..."
+        ></textarea>
+
+        <div class="controls">
+          <label for="pageCount">Pages
+            <select id="pageCount">
+              <option value="5">5</option>
+              <option value="8" selected>8</option>
+              <option value="10">10</option>
+              <option value="12">12</option>
+              <option value="16">16</option>
+            </select>
+          </label>
+          <button id="generateBtn" class="primary">Create my book</button>
+        </div>
+
+        <p id="status" class="status" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- Book -->
+      <section id="reader" class="reader hidden" aria-live="polite">
+        <h2 id="bookTitle" class="book-title"></h2>
+
+        <div class="book" id="book">
+          <div class="page" id="page">
+            <div class="page-art">
+              <img id="pageImage" alt="" />
+              <div class="art-loading" id="artLoading">illustrating…</div>
+            </div>
+            <div class="page-text" id="pageText"></div>
+            <div class="page-number" id="pageNumber"></div>
+          </div>
+        </div>
+
+        <div class="nav">
+          <button id="prevBtn" class="ghost">← Back</button>
+          <span id="progress" class="progress"></span>
+          <button id="nextBtn" class="ghost">Next →</button>
+        </div>
+
+        <div class="actions">
+          <button id="printBtn" class="ghost">Save / Print as PDF</button>
+          <button id="newBtn" class="ghost">Start a new book</button>
+        </div>
+      </section>
+    </main>
+
+    <!-- Hidden print surface: every page, all images, for PDF export -->
+    <div id="printRoot" class="print-root" aria-hidden="true"></div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
