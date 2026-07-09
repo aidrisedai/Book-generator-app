@@ -153,13 +153,26 @@ app.post("/api/image", async (req, res, next) => {
       ? `${prompt}\n\nArt direction (keep consistent across the whole book): ${artStyle}`
       : prompt;
 
-    const result = await openai.images.generate({
-      model: IMAGE_MODEL,
-      prompt: fullPrompt,
-      size: IMAGE_SIZE,
-      quality: IMAGE_QUALITY,
-      n: 1,
-    });
+    // Different OpenAI image models take slightly different parameters.
+    const params = { model: IMAGE_MODEL, prompt: fullPrompt, size: IMAGE_SIZE, n: 1 };
+    if (IMAGE_MODEL.startsWith("dall-e")) {
+      // dall-e-2 / dall-e-3 return a URL by default; ask for base64 instead,
+      // and use their quality vocabulary ("standard" | "hd").
+      params.response_format = "b64_json";
+      if (IMAGE_MODEL === "dall-e-3") {
+        params.quality = ["hd", "high"].includes(IMAGE_QUALITY) ? "hd" : "standard";
+      }
+    } else {
+      // gpt-image-1: quality is low | medium | high | auto; always returns b64.
+      params.quality = IMAGE_QUALITY;
+    }
+
+    let result;
+    try {
+      result = await openai.images.generate(params);
+    } catch (apiErr) {
+      throw friendlyOpenAIError(apiErr);
+    }
 
     const b64 = result.data?.[0]?.b64_json;
     if (!b64) throw httpError(502, "The image model returned no image. Please try again.");
@@ -174,6 +187,24 @@ app.post("/api/image", async (req, res, next) => {
     next(err);
   }
 });
+
+// Turn OpenAI's raw errors into a clear, actionable message for the UI.
+function friendlyOpenAIError(err) {
+  const raw = err?.message || String(err);
+  const lower = raw.toLowerCase();
+  let hint = "";
+  if (lower.includes("verif")) {
+    hint = `Your OpenAI organization must be verified to use "${IMAGE_MODEL}". Either verify it at platform.openai.com/settings/organization/general, or switch to an easier model by setting IMAGE_MODEL=dall-e-3 in your .env file and restarting.`;
+  } else if (lower.includes("billing") || lower.includes("quota") || lower.includes("insufficient") || lower.includes("credit")) {
+    hint = "Your OpenAI account has no available credit. Add a payment method / credits at platform.openai.com/settings/organization/billing, then try again.";
+  } else if (err?.status === 401 || lower.includes("api key") || lower.includes("incorrect")) {
+    hint = "Your OPENAI_API_KEY looks invalid. Double-check it in your .env file (no quotes, no spaces) and restart the server.";
+  } else if (err?.status === 429) {
+    hint = "OpenAI is rate-limiting requests. Wait a moment and retry, or lower the page count.";
+  }
+  const message = hint ? `${hint}\n\n(OpenAI said: ${raw})` : `Image generation failed. OpenAI said: ${raw}`;
+  return httpError(err?.status && err.status < 500 ? 400 : 502, message);
+}
 
 // Centralized error handling -> always JSON so the frontend can show a message.
 app.use((err, _req, res, _next) => {
