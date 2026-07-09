@@ -30,6 +30,7 @@ function setStatus(msg, isError = false) {
 async function generate() {
   const paragraph = $("paragraph").value.trim();
   const pageCount = Number($("pageCount").value);
+  const genre = $("genreInput").value.trim();
   if (!paragraph) {
     setStatus("Please write a paragraph first.", true);
     return;
@@ -39,7 +40,7 @@ async function generate() {
   setStatus("Writing your story… (this can take a moment)");
 
   try {
-    const story = await postJSON("/api/story", { paragraph, pageCount });
+    const story = await postJSON("/api/story", { paragraph, pageCount, genre });
     book = {
       ...story,
       pages: story.pages.map((p) => ({ ...p, imageUrl: null, status: "pending" })),
@@ -124,14 +125,58 @@ function go(delta) {
 
 // ---- Read aloud (browser Web Speech API) ----
 let reading = false;
+let narrator = null; // the chosen voice
 const speechSupported = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
 
+// Pick the most natural-sounding English voice the browser offers.
+function pickVoice() {
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices.length) return null;
+  const english = voices.filter((v) => /^en/i.test(v.lang));
+  const pool = english.length ? english : voices;
+  const score = (v) => {
+    const n = v.name.toLowerCase();
+    let s = 0;
+    if (n.includes("natural")) s += 6; // MS "Natural" voices
+    if (n.includes("neural")) s += 6;
+    if (n.includes("google")) s += 5; // Chrome's Google voices
+    if (n.includes("premium") || n.includes("enhanced")) s += 4;
+    if (n.includes("aria") || n.includes("jenny") || n.includes("guy")) s += 2;
+    if (/en-us/i.test(v.lang)) s += 1;
+    if (n.includes("zira") || n.includes("david") || n.includes("mark")) s -= 2; // older robotic MS voices
+    return s;
+  };
+  return pool.slice().sort((a, b) => score(b) - score(a))[0] || pool[0];
+}
+
+if (speechSupported) {
+  narrator = pickVoice();
+  // Voices often load asynchronously — refresh once they're ready.
+  window.speechSynthesis.onvoiceschanged = () => { narrator = pickVoice(); };
+}
+
+// Split a page into sentences so narration flows with natural pauses
+// (also avoids a Chrome bug that cuts off long single utterances).
+function splitSentences(text) {
+  const parts = text.match(/[^.!?…]+[.!?…]*/g);
+  return (parts || [text]).map((s) => s.trim()).filter(Boolean);
+}
+
+function speakSentences(sentences, i, onDone) {
+  if (!reading) return;
+  if (i >= sentences.length) { onDone(); return; }
+  const u = new SpeechSynthesisUtterance(sentences[i]);
+  if (narrator) u.voice = narrator;
+  u.rate = 0.92;   // a touch slower reads more like a storyteller
+  u.pitch = 1.05;  // gently warmer
+  u.onend = () => speakSentences(sentences, i + 1, onDone);
+  window.speechSynthesis.speak(u);
+}
+
 function speakPage(index) {
-  const utter = new SpeechSynthesisUtterance(book.pages[index].text);
-  utter.rate = 0.95;
-  utter.pitch = 1;
-  utter.onend = () => {
-    if (!reading) return; // was stopped
+  const sentences = splitSentences(book.pages[index].text);
+  speakSentences(sentences, 0, () => {
+    if (!reading) return;
     if (index < book.pages.length - 1) {
       current = index + 1;
       renderPage();
@@ -139,13 +184,13 @@ function speakPage(index) {
     } else {
       stopReading();
     }
-  };
-  window.speechSynthesis.speak(utter);
+  });
 }
 
 function startReading() {
   if (!book || !speechSupported) return;
   window.speechSynthesis.cancel();
+  if (!narrator) narrator = pickVoice();
   reading = true;
   updateReadButton();
   speakPage(current);
@@ -207,6 +252,59 @@ function reset() {
   setStatus("");
   $("printRoot").innerHTML = "";
 }
+
+// ---- Genre picker ----
+const GENRES = [
+  "Fantasy", "Sci-Fi", "Mystery", "Adventure", "Fairy Tale", "Bedtime",
+  "Comedy", "Spooky", "Superhero", "Mythology", "Western", "Romance",
+  "Historical", "Fable",
+];
+
+function setGenreLabel() {
+  const val = $("genreInput").value.trim();
+  $("genreLabel").textContent = val || "Any genre";
+  // Highlight a matching chip if the text equals a preset.
+  document.querySelectorAll(".genre-chip").forEach((chip) => {
+    chip.classList.toggle("selected", chip.dataset.genre.toLowerCase() === val.toLowerCase());
+  });
+}
+
+function buildGenrePicker() {
+  const grid = $("genreGrid");
+  GENRES.forEach((g) => {
+    const chip = document.createElement("button");
+    chip.className = "genre-chip";
+    chip.type = "button";
+    chip.textContent = g;
+    chip.dataset.genre = g;
+    chip.addEventListener("click", () => {
+      // Click a selected chip again to clear it.
+      const already = $("genreInput").value.trim().toLowerCase() === g.toLowerCase();
+      $("genreInput").value = already ? "" : g;
+      setGenreLabel();
+    });
+    grid.appendChild(chip);
+  });
+
+  $("genreInput").addEventListener("input", setGenreLabel);
+
+  $("genreToggle").addEventListener("click", (e) => {
+    e.stopPropagation();
+    const panel = $("genrePanel");
+    const open = panel.classList.toggle("hidden") === false;
+    $("genreToggle").setAttribute("aria-expanded", String(open));
+  });
+
+  // Close the panel when clicking elsewhere.
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".genre-corner")) {
+      $("genrePanel").classList.add("hidden");
+      $("genreToggle").setAttribute("aria-expanded", "false");
+    }
+  });
+}
+
+buildGenrePicker();
 
 // ---- Wire up ----
 $("generateBtn").addEventListener("click", generate);

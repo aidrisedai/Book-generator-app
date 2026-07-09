@@ -13,6 +13,18 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <!-- Genre picker in the corner -->
+    <div class="genre-corner">
+      <button id="genreToggle" class="genre-toggle" aria-expanded="false" aria-controls="genrePanel">
+        🎭 <span id="genreLabel">Any genre</span> <span class="caret">▾</span>
+      </button>
+      <div id="genrePanel" class="genre-panel hidden">
+        <label class="field-label" for="genreInput">Pick a genre — or type your own</label>
+        <input id="genreInput" type="text" placeholder="e.g. space western, cozy mystery…" maxlength="60" />
+        <div class="genre-grid" id="genreGrid"></div>
+      </div>
+    </div>
+
     <header class="site-header">
       <h1>The Storybook Machine</h1>
       <p>Give it a paragraph. Get back a whole illustrated book.</p>

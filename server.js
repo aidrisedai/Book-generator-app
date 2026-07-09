@@ -76,8 +76,8 @@ const STORY_SCHEMA = {
   additionalProperties: false,
 };
 
-function buildSystemPrompt(pageCount) {
-  return [
+function buildSystemPrompt(pageCount, genre) {
+  const lines = [
     "You are an award-winning picture-book author and art director.",
     "Expand the reader's paragraph into a complete, satisfying illustrated story with a clear beginning, middle, and end.",
     `Write exactly ${pageCount} pages.`,
@@ -85,13 +85,20 @@ function buildSystemPrompt(pageCount) {
     "Keep the prose warm, vivid, and age-appropriate for an illustrated book unless the paragraph clearly implies an older audience.",
     "For 'art_style', commit to ONE consistent visual style and describe recurring characters/settings concretely so every illustration matches.",
     "Every 'image_prompt' must be a concrete visual scene (who, where, doing what, mood, lighting) and should restate character appearances rather than relying on memory.",
-  ].join(" ");
+  ];
+  if (genre) {
+    lines.push(
+      `The story MUST be firmly in the "${genre}" genre — let it shape the tone, setting, pacing, character types, plot beats, and the mood of every illustration. Commit to the genre wholeheartedly.`
+    );
+  }
+  return lines.join(" ");
 }
 
 // POST /api/story  -> { bookId, title, art_style, pages: [{ text, image_prompt }] }
 app.post("/api/story", async (req, res, next) => {
   try {
     const paragraph = String(req.body?.paragraph || "").trim();
+    const genre = String(req.body?.genre || "").trim().slice(0, 60);
     let pageCount = Number.parseInt(req.body?.pageCount, 10);
     if (!paragraph) throw httpError(400, "Please provide a paragraph to build the story from.");
     if (!Number.isFinite(pageCount)) pageCount = 8;
@@ -106,7 +113,7 @@ app.post("/api/story", async (req, res, next) => {
         effort: "medium",
         format: { type: "json_schema", schema: STORY_SCHEMA },
       },
-      system: buildSystemPrompt(pageCount),
+      system: buildSystemPrompt(pageCount, genre),
       messages: [{ role: "user", content: paragraph }],
     });
 
