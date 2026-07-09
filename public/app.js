@@ -59,33 +59,55 @@ async function generate() {
   }
 }
 
+// ---- Illustrate a single page ----
+async function illustrateOne(i) {
+  const page = book.pages[i];
+  page.status = "pending";
+  page.error = null;
+  if (i === current) renderPage();
+  try {
+    const { imageUrl } = await postJSON("/api/image", {
+      bookId: book.bookId,
+      pageIndex: i,
+      prompt: page.image_prompt,
+      artStyle: book.art_style,
+    });
+    page.imageUrl = imageUrl;
+    page.status = "done";
+  } catch (err) {
+    page.status = "error";
+    page.error = err.message;
+    console.error(`Page ${i + 1} illustration failed:`, err.message);
+  }
+  if (i === current) renderPage();
+  updateReaderNote();
+}
+
 // ---- Illustrate every page (limited concurrency) ----
 async function illustrateAll() {
   const queue = book.pages.map((_, i) => i);
   const CONCURRENCY = 3;
-
   async function worker() {
-    while (queue.length) {
-      const i = queue.shift();
-      const page = book.pages[i];
-      try {
-        const { imageUrl } = await postJSON("/api/image", {
-          bookId: book.bookId,
-          pageIndex: i,
-          prompt: page.image_prompt,
-          artStyle: book.art_style,
-        });
-        page.imageUrl = imageUrl;
-        page.status = "done";
-      } catch (err) {
-        page.status = "error";
-        page.error = err.message;
-      }
-      if (i === current) renderPage();
-    }
+    while (queue.length) await illustrateOne(queue.shift());
   }
-
   await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+}
+
+function retryCurrent() {
+  if (book && book.pages[current].status === "error") illustrateOne(current);
+}
+
+// Show the underlying error once, prominently, so it's actionable.
+function updateReaderNote() {
+  const note = $("readerNote");
+  const errored = book && book.pages.find((p) => p.status === "error");
+  if (errored && errored.error) {
+    note.textContent = errored.error;
+    note.classList.remove("hidden");
+  } else {
+    note.textContent = "";
+    note.classList.add("hidden");
+  }
 }
 
 // ---- Render the current page ----
@@ -99,15 +121,25 @@ function renderPage() {
   $("pageNumber").textContent = `Page ${current + 1}`;
   $("progress").textContent = `${current + 1} / ${book.pages.length}`;
 
+  const retryBtn = $("retryBtn");
   if (page.imageUrl) {
     img.src = page.imageUrl;
     img.alt = page.image_prompt;
     artLoading.classList.add("hidden");
+    retryBtn.classList.add("hidden");
   } else {
     img.removeAttribute("src");
     img.alt = "";
     artLoading.classList.remove("hidden");
-    artLoading.textContent = page.status === "error" ? "couldn't draw this one" : "illustrating";
+    if (page.status === "error") {
+      artLoading.textContent = "couldn't draw this one";
+      artLoading.classList.add("is-error");
+      retryBtn.classList.remove("hidden");
+    } else {
+      artLoading.textContent = "illustrating";
+      artLoading.classList.remove("is-error");
+      retryBtn.classList.add("hidden");
+    }
   }
 
   $("prevBtn").disabled = current === 0;
@@ -251,6 +283,7 @@ function reset() {
   composer.classList.remove("hidden");
   setStatus("");
   $("printRoot").innerHTML = "";
+  $("readerNote").classList.add("hidden");
 }
 
 // ---- Genre picker ----
@@ -313,6 +346,7 @@ $("nextBtn").addEventListener("click", () => go(1));
 $("printBtn").addEventListener("click", buildPrintAndOpen);
 $("newBtn").addEventListener("click", reset);
 $("readBtn").addEventListener("click", toggleReading);
+$("retryBtn").addEventListener("click", retryCurrent);
 
 // Hide the read-aloud button on browsers that don't support speech synthesis.
 if (!speechSupported) $("readBtn").classList.add("hidden");
